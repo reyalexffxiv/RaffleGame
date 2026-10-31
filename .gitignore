@@ -1,6 +1,13 @@
 .vs/
-obj/
-bin/
-*.user
-zipcheck/
+.vscode/
+.idea/
+**/bin/
+**/obj/
+dist/
 release/
+zipcheck/
+*.user
+*.suo
+*.log
+*.zip
+.DS_Store

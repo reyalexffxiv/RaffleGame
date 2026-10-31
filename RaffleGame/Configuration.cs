@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using Dalamud.Configuration;
 using Dalamud.Plugin;
-using VenueRaffle.Models;
+using RaffleGame.Models;
 
-namespace VenueRaffle;
+namespace RaffleGame;
 
 /// <summary>
 /// User-editable and persisted plugin settings. Values are intentionally simple so Dalamud can serialize them safely.
@@ -23,7 +23,7 @@ public sealed class Configuration : IPluginConfiguration
         "/sh Hello Everyone ♥\n" +
         "/sh We're running a boosted raffle with a current prize of {Pot} Gil\n" +
         "/sh You can buy tickets from me! Price is {PricePerTicket} gil per ticket\n" +
-        "/sh {MaxTickets} MAX tickets per person\n" +
+        "/sh Ticket limit per purchase: {MaxTickets}\n" +
         "/sh Results will be shown here at the end of the night and posted on Discord https://discord.gg/urbanclub";
 
     public const string DefaultWinnerDrawMacro =
@@ -31,8 +31,7 @@ public sealed class Configuration : IPluginConfiguration
         "/sh !\n" +
         "/sh !\n" +
         "/sh !\n" +
-        "/sh !\n" +
-        "/random {TotalTickets}";
+        "/sh !";
 
     public const string DefaultWinnerResultMacro =
         "/y  is \"{WinnerName}\" with the ticket number {WinningTicket}!\n" +
@@ -126,6 +125,10 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>
     /// Whether the current raffle session is marked as open.
     /// </summary>
+    public long LastStateChangeUtcTicks { get; set; }
+    public int LastWinningTicket { get; set; }
+    public string LastWinnerName { get; set; } = string.Empty;
+
     public bool ActiveSessionWasRunning { get; set; }
 
     /// <summary>
@@ -143,10 +146,25 @@ public sealed class Configuration : IPluginConfiguration
 
     public bool CleanLegacyManualWaitLinesOnce()
     {
-        if (this.LegacyManualWaitLinesCleaned)
-            return false;
-
         var changed = false;
+        // Upgrade only untouched built-in defaults. Never rewrite a host's customized announcement.
+        var formerDefault = DefaultRaffleAdMacro.Replace(
+            "/sh Ticket limit per purchase: {MaxTickets}", "/sh {MaxTickets} MAX tickets per person",
+            StringComparison.Ordinal);
+        if (string.Equals(this.RaffleAdMacro, formerDefault, StringComparison.Ordinal))
+        {
+            this.RaffleAdMacro = DefaultRaffleAdMacro;
+            changed = true;
+        }
+        var formerDrawDefault = DefaultWinnerDrawMacro + "\n/random {TotalTickets}";
+        if (string.Equals(this.WinnerDrawMacro, formerDrawDefault, StringComparison.Ordinal))
+        {
+            this.WinnerDrawMacro = DefaultWinnerDrawMacro;
+            changed = true;
+        }
+        if (this.LegacyManualWaitLinesCleaned) return changed;
+        this.LegacyManualWaitLinesCleaned = true;
+        changed = true;
 
         var raffleAdMacro = this.RaffleAdMacro;
         if (RemoveManualWaitLines(ref raffleAdMacro))
@@ -169,7 +187,6 @@ public sealed class Configuration : IPluginConfiguration
             changed = true;
         }
 
-        this.LegacyManualWaitLinesCleaned = true;
         return changed;
     }
 

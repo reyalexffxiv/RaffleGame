@@ -1,0 +1,18 @@
+{
+  "Author": "ReyAlex",
+  "Name": "Raffle Game",
+  "InternalName": "RaffleGame",
+  "AssemblyVersion": "1.0.0.0",
+  "Punchline": "Raffle ticket sales and winner draws for FFXIV events.",
+  "Description": "Tracks raffle ticket purchases, assigns ticket ranges, calculates sales and prize pot, and finds the winner from a drawn ticket number.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "raffle",
+    "tickets",
+    "venue",
+    "events"
+  ],
+  "DalamudApiLevel": 15,
+  "IconUrl": "https://raw.githubusercontent.com/reyalexffxiv/RaffleGame/master/images/icon.png",
+  "RepoUrl": "https://github.com/reyalexffxiv/RaffleGame"
+}

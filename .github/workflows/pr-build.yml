@@ -1,34 +1,27 @@
-name: Venue Raffle PR Builder
-
+name: RaffleGame build
 on:
   pull_request:
-    branches: [ master ]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-2022
-
     steps:
-    - name: Checkout
-      uses: actions/checkout@v5
-
-    - name: Install .NET
-      uses: actions/setup-dotnet@v5
-      with:
-        dotnet-version: 10.0.x
-
-    - name: Download Dalamud
-      run: |
-        Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile latest.zip
-        Expand-Archive -Force latest.zip "$env:AppData\XIVLauncher\addon\Hooks\dev"
-
-    - name: Build with dotnet
-      run: dotnet build --configuration Release
-
-    - name: Store artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: VenueRaffle
-        path: .\VenueRaffle\bin\x64\Release\*
-        if-no-files-found: error
-        retention-days: 1
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - name: Install Dalamud development runtime
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile latest.zip
+          Expand-Archive -Force latest.zip "$env:AppData\XIVLauncher\addon\Hooks\dev"
+      - name: Build and verify the release archive
+        shell: pwsh
+        run: .\scripts\Build-DalamudPackage.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RaffleGame-build
+          path: dist/RaffleGame-v1.0.0-beta.zip
+          if-no-files-found: error
+          retention-days: 7

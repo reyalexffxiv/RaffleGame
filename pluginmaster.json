@@ -1,18 +1,23 @@
 [
   {
     "Author": "ReyAlex",
-    "Name": "Venue Raffle",
-    "InternalName": "VenueRaffle",
-    "AssemblyVersion": "0.1.1.3",
-    "Description": "A lightweight raffle ticket manager for FFXIV venues.",
-    "Punchline": "Run venue raffles with ticket tracking, macros, and winner draws.",
-    "RepoUrl": "https://github.com/reyalexffxiv/VenueRaffle",
+    "Name": "Raffle Game",
+    "InternalName": "RaffleGame",
+    "AssemblyVersion": "1.0.0.0",
+    "Punchline": "Raffle ticket sales and winner draws for FFXIV events.",
+    "Description": "Tracks raffle ticket purchases, assigns ticket ranges, calculates sales and prize pot, and finds the winner from a drawn ticket number.",
     "ApplicableVersion": "any",
+    "Tags": [
+      "raffle",
+      "tickets",
+      "venue",
+      "events"
+    ],
     "DalamudApiLevel": 15,
-    "IsHide": false,
-    "IsTestingExclusive": false,
-    "DownloadLinkInstall": "https://raw.githubusercontent.com/reyalexffxiv/VenueRaffle/master/dist/VenueRaffle-latest.zip",
-    "DownloadLinkUpdate": "https://raw.githubusercontent.com/reyalexffxiv/VenueRaffle/master/dist/VenueRaffle-latest.zip",
-    "DownloadLinkTesting": "https://raw.githubusercontent.com/reyalexffxiv/VenueRaffle/master/dist/VenueRaffle-latest.zip"
+    "IconUrl": "https://raw.githubusercontent.com/reyalexffxiv/RaffleGame/master/images/icon.png",
+    "RepoUrl": "https://github.com/reyalexffxiv/RaffleGame",
+    "DownloadLinkInstall": "https://github.com/reyalexffxiv/RaffleGame/releases/download/1.0b/RaffleGame-v1.0.0-beta.zip",
+    "DownloadLinkUpdate": "https://github.com/reyalexffxiv/RaffleGame/releases/download/1.0b/RaffleGame-v1.0.0-beta.zip",
+    "DownloadLinkTesting": "https://github.com/reyalexffxiv/RaffleGame/releases/download/1.0b/RaffleGame-v1.0.0-beta.zip"
   }
 ]

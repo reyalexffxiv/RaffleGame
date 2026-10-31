@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+    <PropertyGroup>
+        <Version>1.0.0-beta</Version>
+        <AssemblyVersion>1.0.0.0</AssemblyVersion>
+        <AssemblyName>RaffleGame</AssemblyName>
+        <RootNamespace>RaffleGame</RootNamespace>
+        <PackageProjectUrl>https://github.com/reyalexffxiv/RaffleGame</PackageProjectUrl>
+        <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
+        <IsPackable>false</IsPackable>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Content Include="RaffleGame.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
+    </ItemGroup>
+    <ItemGroup>
+        <EmbeddedResource Include="Assets\peepoblankie.png" LogicalName="RaffleGame.Assets.peepoblankie.png" />
+    </ItemGroup>
+</Project>

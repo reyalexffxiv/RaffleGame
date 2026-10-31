@@ -1,100 +1,67 @@
-param(
-    [string]$Configuration = "Release",
-    [string]$Version = ""
-)
-
-$ErrorActionPreference = "Stop"
+param([string]$Configuration = 'Release')
+$ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
-Set-Location $repo
-
-$projectPath = Join-Path $repo "VenueRaffle\VenueRaffle.csproj"
-$pluginMasterPath = Join-Path $repo "pluginmaster.json"
-
-if ([string]::IsNullOrWhiteSpace($Version)) {
-    [xml]$projectXml = Get-Content $projectPath
-    $Version = $projectXml.Project.PropertyGroup.Version | Select-Object -First 1
+$project = Join-Path $repo 'RaffleGame\RaffleGame.csproj'
+$manifestPath = Join-Path $repo 'RaffleGame\RaffleGame.json'
+$solution = Join-Path $repo 'RaffleGame.sln'
+$expectedIcon = 'https://raw.githubusercontent.com/reyalexffxiv/RaffleGame/master/images/icon.png'
+[xml]$projectXml = Get-Content $project
+$version = [string]($projectXml.Project.PropertyGroup.Version | Select-Object -First 1)
+$assemblyVersion = [string]($projectXml.Project.PropertyGroup.AssemblyVersion | Select-Object -First 1)
+$manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+if ($version -ne '1.0.0-beta' -or $assemblyVersion -ne '1.0.0.0') {
+    throw 'Unexpected RaffleGame release version.'
 }
-
-if ([string]::IsNullOrWhiteSpace($Version)) {
-    throw "Could not determine VenueRaffle version from $projectPath."
+if ($manifest.InternalName -ne 'RaffleGame' -or $manifest.Name -ne 'Raffle Game' -or
+    $manifest.AssemblyVersion -ne $assemblyVersion -or $manifest.DalamudApiLevel -ne 15 -or
+    $manifest.IconUrl -ne $expectedIcon) {
+    throw 'RaffleGame source manifest disagrees with expected release metadata.'
 }
-
-$pluginMaster = Get-Content $pluginMasterPath -Raw | ConvertFrom-Json
-$pluginMasterVersion = @($pluginMaster)[0].AssemblyVersion
-if ($pluginMasterVersion -ne $Version) {
-    throw "Version mismatch: csproj Version is '$Version' but pluginmaster.json AssemblyVersion is '$pluginMasterVersion'."
-}
-
-Write-Host "Building VenueRaffle $Version..."
-dotnet build .\VenueRaffle.sln -c $Configuration /p:Version=$Version
-if ($LASTEXITCODE -ne 0) {
-    throw "dotnet build failed with exit code $LASTEXITCODE. Package was not created."
-}
-
-$dist = Join-Path $repo "dist"
+$dist = Join-Path $repo 'dist'
 New-Item -ItemType Directory -Force $dist | Out-Null
-
-$packagerZip = Join-Path $repo "VenueRaffle\bin\x64\$Configuration\VenueRaffle\latest.zip"
-if (-not (Test-Path $packagerZip)) {
-    throw "DalamudPackager output was not found: $packagerZip"
+$output = Join-Path $dist "RaffleGame-v$version.zip"
+# Remove an old release ZIP first; a failed build must never leave a publishable stale artifact.
+if (Test-Path $output) { Remove-Item $output -Force }
+$started = (Get-Date).ToUniversalTime()
+Write-Host "Building Raffle Game $version ($Configuration)..."
+& dotnet build $solution -c $Configuration -t:Rebuild
+if ($LASTEXITCODE -ne 0) { throw "dotnet build failed ($LASTEXITCODE): no release ZIP created." }
+$latest = Join-Path $repo "RaffleGame\bin\x64\$Configuration\RaffleGame\latest.zip"
+if (-not (Test-Path $latest) -or (Get-Item $latest).LastWriteTimeUtc -lt $started.AddSeconds(-3)) {
+    throw "No freshly created DalamudPackager ZIP at $latest"
 }
-
-$zipPath = Join-Path $dist "VenueRaffle-latest.zip"
-Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
-Copy-Item $packagerZip $zipPath -Force
-
-Write-Host "Created $zipPath"
-Write-Host "Zip contents:"
-
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-$zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+$archive = [IO.Compression.ZipFile]::OpenRead($latest)
 try {
-    $requiredFileNames = @(
-        "VenueRaffle.dll",
-        "VenueRaffle.deps.json",
-        "VenueRaffle.json"
-    )
-
-    $entries = $zip.Entries
-    $entryNames = $entries | ForEach-Object { $_.FullName }
-
-    foreach ($required in $requiredFileNames) {
-        if ($entryNames -notcontains $required) {
-            throw "Zip validation failed: '$required' is missing from the package root."
-        }
+    $names = @($archive.Entries | ForEach-Object { $_.FullName })
+    if ($names.Count -ne @($names | Select-Object -Unique).Count) { throw 'Duplicate ZIP entries.' }
+    foreach ($required in @('RaffleGame.dll','RaffleGame.deps.json','RaffleGame.json')) {
+        if ($names -notcontains $required) { throw "Missing release ZIP root entry: $required" }
     }
-
-    foreach ($entryName in $entryNames) {
-        if ($entryName -match "/") {
-            throw "Zip validation failed: '$entryName' is nested. Plugin files must be at the zip root."
-        }
+    foreach ($name in $names) {
+        if ($name.Contains('/') -or $name.Contains('\')) { throw "Unexpected nested release entry: $name" }
     }
-
-    $manifestEntry = $entries | Where-Object { $_.FullName -eq "VenueRaffle.json" } | Select-Object -First 1
-    $reader = New-Object System.IO.StreamReader($manifestEntry.Open())
+    $reader = [IO.StreamReader]::new($archive.GetEntry('RaffleGame.json').Open())
+    try { $packedManifest = $reader.ReadToEnd() | ConvertFrom-Json }
+    finally { $reader.Dispose() }
+    if ($packedManifest.InternalName -ne 'RaffleGame' -or $packedManifest.Name -ne 'Raffle Game' -or
+        $packedManifest.AssemblyVersion -ne $assemblyVersion -or $packedManifest.DalamudApiLevel -ne 15 -or
+        $packedManifest.IconUrl -ne $expectedIcon) {
+        throw 'Packaged manifest failed release metadata checks.'
+    }
+    $tempDll = Join-Path $env:TEMP "RaffleGame-$([guid]::NewGuid()).dll"
     try {
-        $stagedManifest = $reader.ReadToEnd() | ConvertFrom-Json
+        $inputStream = $archive.GetEntry('RaffleGame.dll').Open()
+        $outStream = [IO.File]::Create($tempDll)
+        try { $inputStream.CopyTo($outStream) }
+        finally { $outStream.Dispose(); $inputStream.Dispose() }
+        $actualAssemblyVersion = [Reflection.AssemblyName]::GetAssemblyName($tempDll).Version.ToString()
+        if ($actualAssemblyVersion -ne $assemblyVersion) {
+            throw "Packaged DLL version $actualAssemblyVersion does not match $assemblyVersion"
+        }
     }
-    finally {
-        $reader.Dispose()
-    }
-
-    if ($stagedManifest.InternalName -ne "VenueRaffle") {
-        throw "Staged manifest InternalName mismatch: expected 'VenueRaffle', got '$($stagedManifest.InternalName)'."
-    }
-
-    if ($stagedManifest.AssemblyVersion -ne $Version) {
-        throw "Staged manifest AssemblyVersion mismatch: expected '$Version', got '$($stagedManifest.AssemblyVersion)'."
-    }
-
-    if ($stagedManifest.DalamudApiLevel -ne 15) {
-        throw "Staged manifest DalamudApiLevel mismatch: expected '15', got '$($stagedManifest.DalamudApiLevel)'."
-    }
-
-    foreach ($entry in $entries) {
-        " - $($entry.FullName)"
-    }
+    finally { Remove-Item $tempDll -ErrorAction SilentlyContinue }
 }
-finally {
-    $zip.Dispose()
-}
+finally { $archive.Dispose() }
+Copy-Item $latest $output
+Write-Host "Verified package: $output" -ForegroundColor Green

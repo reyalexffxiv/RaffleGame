@@ -4,7 +4,7 @@ using System.Text.Json;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 
-namespace VenueRaffle.Services;
+namespace RaffleGame.Services;
 
 /// <summary>
 /// Saves and loads the live raffle ledger through Dalamud's reliable file storage service.
@@ -22,6 +22,8 @@ public sealed class RaffleStateStorage
         PropertyNameCaseInsensitive = true,
     };
 
+    public bool StateLoadFailed { get; private set; }
+    public bool StateSaveFailed { get; private set; }
     private readonly IReliableFileStorage reliableFileStorage;
     private readonly IPluginLog log;
     private readonly string stateFilePath;
@@ -43,11 +45,18 @@ public sealed class RaffleStateStorage
     {
         if (!this.reliableFileStorage.Exists(this.stateFilePath))
         {
+            if (configuration.SalesLedger.Count > 0 &&
+                !RaffleLedgerValidator.IsValid(configuration.SalesLedger))
+            {
+                this.StateLoadFailed = true;
+                this.log.Error("Configuration ledger failed validation. Refusing to overwrite old data.");
+                return;
+            }
             // First run after upgrade: preserve the old config-based ledger by writing it
             // to the separate reliable state file.
             if (configuration.SalesLedger.Count > 0 || configuration.ActiveSessionWasRunning || !string.IsNullOrWhiteSpace(configuration.ActiveSessionLastNotice))
             {
-                this.log.Information("Migrating legacy VenueRaffle state from plugin configuration to IReliableFileStorage.");
+                this.log.Information("Migrating legacy RaffleGame state from plugin configuration to IReliableFileStorage.");
                 this.Save(configuration);
             }
 
@@ -62,32 +71,56 @@ public sealed class RaffleStateStorage
                 .GetResult();
 
             var state = JsonSerializer.Deserialize<RafflePersistentState>(contents, JsonOptions)
-                ?? throw new InvalidDataException("VenueRaffle state file was empty or invalid.");
+                ?? throw new InvalidDataException("RaffleGame state file was empty or invalid.");
 
-            configuration.SalesLedger = state.SalesLedger ?? new();
+            if (!RaffleLedgerValidator.IsValid(state.SalesLedger))
+                throw new InvalidDataException("Saved ticket ledger failed validation; original file preserved.");
+            // If a previous state write failed after Dalamud saved its configuration,
+            // prefer the newer validated configuration rather than losing the sale.
+            if (configuration.LastStateChangeUtcTicks > state.UpdatedUtcTicks)
+            {
+                if (!RaffleLedgerValidator.IsValid(configuration.SalesLedger))
+                    throw new InvalidDataException("Newer configuration ledger failed validation.");
+                this.log.Warning("Recovering more recent raffle ledger from plugin configuration.");
+                this.Save(configuration);
+                return;
+            }
+            configuration.SalesLedger = state.SalesLedger;
+            configuration.LastStateChangeUtcTicks = state.UpdatedUtcTicks;
+            configuration.LastWinningTicket = state.LastWinningTicket;
+            configuration.LastWinnerName = state.LastWinnerName ?? string.Empty;
             configuration.ActiveSessionWasRunning = state.ActiveSessionWasRunning;
             configuration.ActiveSessionLastNotice = state.ActiveSessionLastNotice ?? string.Empty;
 
-            this.log.Information("Loaded VenueRaffle state from IReliableFileStorage: {Count} sale record(s).", configuration.SalesLedger.Count);
+            this.log.Information("Loaded RaffleGame state from IReliableFileStorage: {Count} sale record(s).", configuration.SalesLedger.Count);
         }
         catch (FileNotFoundException)
         {
-            this.log.Information("No VenueRaffle reliable state file found yet.");
+            this.log.Information("No RaffleGame reliable state file found yet.");
         }
         catch (Exception ex)
         {
-            this.log.Error(ex, "Could not load VenueRaffle state from IReliableFileStorage. Keeping config/default state.");
+            this.StateLoadFailed = true;
+            this.log.Error(ex, "RaffleGame saved state failed to load. Writes disabled; original file preserved.");
         }
     }
 
     /// <summary>Persists the raffle state through Dalamud's reliable file storage API.</summary>
-    public void Save(Configuration configuration)
+    public bool Save(Configuration configuration)
     {
+        if (this.StateLoadFailed || this.StateSaveFailed)
+        {
+            this.log.Warning("RaffleGame refused to overwrite unavailable raffle state.");
+            return false;
+        }
         try
         {
             var state = new RafflePersistentState
             {
                 SalesLedger = configuration.SalesLedger,
+                UpdatedUtcTicks = configuration.LastStateChangeUtcTicks,
+                LastWinningTicket = configuration.LastWinningTicket,
+                LastWinnerName = configuration.LastWinnerName,
                 ActiveSessionWasRunning = configuration.ActiveSessionWasRunning,
                 ActiveSessionLastNotice = configuration.ActiveSessionLastNotice ?? string.Empty,
             };
@@ -97,10 +130,17 @@ public sealed class RaffleStateStorage
                 .WriteAllTextAsync(this.stateFilePath, json)
                 .GetAwaiter()
                 .GetResult();
+            // The reliable file is authoritative. The plugin config is a secondary
+            // settings/legacy recovery snapshot, not a prerequisite for an issued ticket.
+            try { configuration.Save(); }
+            catch (Exception ex) { this.log.Warning(ex, "RaffleGame state saved, but config mirror failed."); }
+            return true;
         }
         catch (Exception ex)
         {
-            this.log.Error(ex, "Could not save VenueRaffle state to IReliableFileStorage.");
+            this.StateSaveFailed = true;
+            this.log.Error(ex, "RaffleGame state save failed; edits locked until restart/recovery.");
+            return false;
         }
     }
 }
